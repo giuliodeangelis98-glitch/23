@@ -21,7 +21,8 @@ RESET = "\033[0m"
 
 def fetch_price(symbol: str) -> tuple[float, float]:
     url = API.format(symbol=symbol)
-    with urllib.request.urlopen(url, timeout=5) as r:
+    req = urllib.request.Request(url, headers={"User-Agent": "crypto-ticker/1.0"})
+    with urllib.request.urlopen(req, timeout=5) as r:
         data = json.load(r)
     rows = data.get("result", {}).get("data", [])
     if not rows:
