@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<title>Flux — high-performance motion</title>
+<style>
+  :root {
+    --bg: #05060a;
+    --fg: #f5f6fb;
+    --muted: #8a8fa3;
+    --accent: #7cf1ff;
+    --accent-2: #b794ff;
+    --accent-3: #ff8fbc;
+    --ease: cubic-bezier(.2,.7,.1,1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "ss01","cv11","liga";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  /* Animated gradient mesh — pure CSS, runs on the compositor */
+  .mesh {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(45vmax 45vmax at 12% 18%, rgba(124,241,255,.18), transparent 60%),
+      radial-gradient(40vmax 40vmax at 88% 12%, rgba(183,148,255,.16), transparent 62%),
+      radial-gradient(55vmax 55vmax at 70% 92%, rgba(255,143,188,.14), transparent 65%),
+      radial-gradient(60vmax 60vmax at 20% 88%, rgba(80,140,255,.12), transparent 65%),
+      var(--bg);
+    filter: saturate(1.05);
+    will-change: transform;
+    animation: drift 24s var(--ease) infinite alternate;
+    transform: translate3d(0,0,0);
+  }
+  @keyframes drift {
+    0%   { transform: translate3d(-2%, -1%, 0) scale(1.04); }
+    100% { transform: translate3d( 2%,  1%, 0) scale(1.08); }
+  }
+
+  /* Subtle film grain via SVG noise, GPU-composited */
+  .grain {
+    position: fixed; inset: -10%; z-index: 1; pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    opacity: .55;
+    mix-blend-mode: overlay;
+    will-change: transform;
+    animation: grain 1.2s steps(6) infinite;
+  }
+  @keyframes grain {
+    0%   { transform: translate3d(0,0,0); }
+    20%  { transform: translate3d(-1%, 1%, 0); }
+    40%  { transform: translate3d( 1%,-1%, 0); }
+    60%  { transform: translate3d(-2%, 0%, 0); }
+    80%  { transform: translate3d( 2%, 2%, 0); }
+    100% { transform: translate3d(0,-1%, 0); }
+  }
+
+  /* Particle canvas */
+  canvas#flow {
+    position: fixed; inset: 0; z-index: 2;
+    width: 100%; height: 100%;
+    display: block;
+    pointer-events: none;
+    mix-blend-mode: screen;
+  }
+
+  /* Content */
+  main {
+    position: relative; z-index: 3;
+    min-height: 100svh;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    padding: clamp(20px, 3vw, 36px);
+  }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-weight: 600; letter-spacing: .02em;
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: conic-gradient(from 0deg, var(--accent), var(--accent-2), var(--accent-3), var(--accent));
+    box-shadow: 0 0 24px rgba(124,241,255,.6);
+    animation: spin 6s linear infinite;
+    will-change: transform;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  nav { display: flex; gap: 22px; color: var(--muted); font-size: 14px; }
+  nav a {
+    color: inherit; text-decoration: none;
+    position: relative; transition: color .3s var(--ease);
+  }
+  nav a::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -6px;
+    height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left;
+    transition: transform .4s var(--ease);
+  }
+  nav a:hover { color: var(--fg); }
+  nav a:hover::after { transform: scaleX(1); }
+
+  .hero {
+    align-self: center;
+    max-width: 1100px;
+    margin: 0 auto;
+    text-align: center;
+    padding: clamp(40px, 8vw, 120px) 0;
+  }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px; letter-spacing: .28em; text-transform: uppercase;
+    color: var(--muted);
+    padding: 8px 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 999px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 0; transform: translate3d(0,12px,0);
+    animation: rise .9s var(--ease) .05s forwards;
+  }
+
+  h1 {
+    font-size: clamp(44px, 9vw, 132px);
+    line-height: .95; letter-spacing: -.03em;
+    margin: 22px 0 18px;
+    font-weight: 600;
+  }
+  h1 .line { display: block; overflow: hidden; }
+  h1 .line > span {
+    display: inline-block;
+    transform: translate3d(0, 110%, 0);
+    will-change: transform;
+    animation: rise 1s var(--ease) forwards;
+  }
+  h1 .line:nth-child(1) > span { animation-delay: .15s; }
+  h1 .line:nth-child(2) > span {
+    animation-delay: .28s;
+    background: linear-gradient(92deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+
+  p.lede {
+    font-size: clamp(15px, 1.4vw, 19px);
+    color: var(--muted);
+    max-width: 62ch; margin: 0 auto;
+    opacity: 0; transform: translate3d(0,10px,0);
+    animation: rise .9s var(--ease) .5s forwards;
+  }
+
+  .cta {
+    margin-top: 36px;
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 14px 22px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02));
+    border: 1px solid rgba(255,255,255,.12);
+    color: var(--fg); text-decoration: none; font-size: 15px;
+    transition: transform .3s var(--ease), background .3s var(--ease), border-color .3s var(--ease);
+    opacity: 0; transform: translate3d(0,10px,0);
+    animation: rise .9s var(--ease) .65s forwards;
+    will-change: transform;
+  }
+  .cta:hover { transform: translate3d(0,-2px,0); border-color: rgba(255,255,255,.22); background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04)); }
+  .cta .arrow { transition: transform .3s var(--ease); }
+  .cta:hover .arrow { transform: translate3d(4px,0,0); }
+
+  @keyframes rise {
+    to { opacity: 1; transform: translate3d(0,0,0); }
+  }
+
+  footer {
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted); font-size: 12px;
+    padding-top: 24px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.02);
+  }
+  .pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #6affb6; box-shadow: 0 0 12px #6affb6;
+    animation: pulse 1.8s var(--ease) infinite;
+  }
+  @keyframes pulse { 50% { opacity: .35; transform: scale(.85); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+    .mesh, .grain { animation: none !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="mesh" aria-hidden="true"></div>
+  <canvas id="flow" aria-hidden="true"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
+  <main>
+    <header>
+      <div class="brand"><span class="dot" aria-hidden="true"></span>Flux</div>
+      <nav>
+        <a href="#">Work</a>
+        <a href="#">Studio</a>
+        <a href="#">Journal</a>
+        <a href="#">Contact</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <span class="eyebrow">Motion · 2026</span>
+      <h1>
+        <span class="line"><span>Design that</span></span>
+        <span class="line"><span>moves at 120fps.</span></span>
+      </h1>
+      <p class="lede">A compositor-only gradient mesh, a typed-array curl-noise flow field, and zero layout thrash. Beautiful by default, fast by design.</p>
+      <a class="cta" href="#">Explore the system <span class="arrow">→</span></a>
+    </section>
+
+    <footer>
+      <span class="pill"><span class="pulse" aria-hidden="true"></span>Live · GPU compositor</span>
+      <span>© Flux Studio</span>
+    </footer>
+  </main>
+
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('flow');
+  const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
+
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Device pixel ratio capped — diminishing returns past 2x for soft particles.
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  let W = 0, H = 0;
+  let particles, posX, posY, vx, vy, life, hue;
+  let N = 0;
+  let lastT = 0;
+  let running = true;
+
+  // Cheap pseudo-curl-noise via two phase-shifted sinusoidal fields.
+  // O(1) per particle, no lookups, no allocations.
+  const TAU = Math.PI * 2;
+  function fieldX(x, y, t) {
+    return Math.sin(y * 0.0042 + t * 0.00018) +
+           Math.cos((x + y) * 0.0021 - t * 0.00012);
+  }
+  function fieldY(x, y, t) {
+    return Math.cos(x * 0.0046 - t * 0.00021) -
+           Math.sin((x - y) * 0.0023 + t * 0.00010);
+  }
+
+  function resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    W = (w * DPR) | 0;
+    H = (h * DPR) | 0;
+    canvas.width = W;
+    canvas.height = H;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+
+    // Particle count scaled to viewport area — keeps cost roughly constant per pixel.
+    // Tuned to stay well under one frame budget on a mid-range laptop.
+    const area = W * H;
+    N = Math.min(2200, Math.max(500, (area / 4200) | 0));
+    if (reduceMotion) N = Math.min(N, 220);
+
+    posX = new Float32Array(N);
+    posY = new Float32Array(N);
+    vx   = new Float32Array(N);
+    vy   = new Float32Array(N);
+    life = new Float32Array(N);
+    hue  = new Float32Array(N);
+
+    for (let i = 0; i < N; i++) seed(i, true);
+
+    // Solid backdrop so the first frame trails cleanly.
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(5,6,10,1)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function seed(i, initial) {
+    posX[i] = Math.random() * W;
+    posY[i] = Math.random() * H;
+    vx[i] = 0;
+    vy[i] = 0;
+    life[i] = initial ? Math.random() * 1 : 0;
+    // Hue palette stays in a narrow band — cyan / violet / pink — picked once.
+    const r = Math.random();
+    hue[i] = r < 0.45 ? 188 + Math.random() * 16
+           : r < 0.8  ? 268 + Math.random() * 18
+                      : 322 + Math.random() * 18;
+  }
+
+  // Fade prior frame instead of clearing — produces motion trails essentially free,
+  // and avoids a full repaint of the dark backdrop.
+  function fadeFrame() {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(5,6,10,0.10)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function step(t) {
+    if (!running) return;
+    const dt = Math.min(48, t - lastT) || 16;
+    lastT = t;
+
+    fadeFrame();
+
+    // Additive blend: many faint particles compose into bright cores cheaply.
+    ctx.globalCompositeOperation = 'lighter';
+
+    const speed = reduceMotion ? 0.05 : 0.55;
+    const damp  = 0.92;
+
+    // One tight loop, no per-particle allocations.
+    for (let i = 0; i < N; i++) {
+      const x = posX[i], y = posY[i];
+
+      // Curl-noise-ish flow direction.
+      const ax = fieldX(x, y, t) - fieldY(x, y, t * 0.5);
+      const ay = fieldY(x, y, t) + fieldX(x, y, t * 0.5);
+
+      let nvx = vx[i] * damp + ax * speed;
+      let nvy = vy[i] * damp + ay * speed;
+
+      const nx = x + nvx * dt * 0.06;
+      const ny = y + nvy * dt * 0.06;
+
+      vx[i] = nvx;
+      vy[i] = nvy;
+      posX[i] = nx;
+      posY[i] = ny;
+
+      life[i] += dt * 0.0009;
+
+      // Respawn when off-screen or aged — fillRect of a 1×1 square is faster
+      // than arc() for small soft particles.
+      const off = nx < -20 || nx > W + 20 || ny < -20 || ny > H + 20 || life[i] > 1;
+      if (off) { seed(i, false); continue; }
+
+      const a = (1 - life[i]) * 0.55;
+      // hsla string built once per particle; cheaper than gradient lookups at this scale.
+      ctx.fillStyle = 'hsla(' + hue[i] + ',95%,68%,' + a + ')';
+      const s = 1.4 * DPR;
+      ctx.fillRect(nx, ny, s, s);
+    }
+
+    rafId = requestAnimationFrame(step);
+  }
+
+  let rafId = 0;
+  function start() {
+    if (rafId) return;
+    lastT = performance.now();
+    rafId = requestAnimationFrame(step);
+  }
+  function stop() {
+    if (!rafId) return;
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+
+  // Pause when tab is hidden — saves battery, prevents jank on resume.
+  document.addEventListener('visibilitychange', () => {
+    running = !document.hidden;
+    if (running) start(); else stop();
+  });
+
+  // Debounced resize via rAF — avoids re-allocating typed arrays on every event.
+  let resizeQueued = false;
+  window.addEventListener('resize', () => {
+    if (resizeQueued) return;
+    resizeQueued = true;
+    requestAnimationFrame(() => { resizeQueued = false; resize(); });
+  }, { passive: true });
+
+  resize();
+  start();
+})();
+</script>
+</body>
+</html>
