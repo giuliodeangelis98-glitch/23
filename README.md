@@ -1,8 +1,20 @@
 # 23
 
-A small collection of cool terminal toys. Stdlib-only Python (Pillow optional for image-to-ASCII).
+A small collection of cool terminal toys. Stdlib-only Python (Pillow optional for image-to-ASCII, `anthropic` optional for `claude_chat.py`).
 
 ## Tools
+
+### `tools/claude_chat.py` — Multi-turn chat with Claude
+Streaming chat using the Anthropic API. Multi-turn history, prompt caching on the system prompt, slash commands, optional adaptive thinking.
+
+```sh
+export ANTHROPIC_API_KEY=...    # from https://console.anthropic.com
+pip install anthropic
+python3 tools/claude_chat.py
+python3 tools/claude_chat.py --system "You are a senior Rust reviewer." --think
+```
+
+Inside the REPL: `/help`, `/clear`, `/system <text>`, `/tokens`, `/quit`.
 
 ### `tools/ascii_art.py` — ASCII art generator
 Render text as a banner or convert an image to ASCII.
